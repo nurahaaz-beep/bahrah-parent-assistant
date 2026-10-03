@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>إدارة المساعد | ثانوية بحرة الأولى</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;font-family:Tahoma,Arial,sans-serif;background:linear-gradient(135deg,#eef7f4,#f7f8fb);color:#24313a}
+.wrap{max-width:1000px;margin:30px auto;padding:0 18px}
+.card{background:#fff;border:1px solid #e0e8e4;border-radius:18px;box-shadow:0 8px 30px #1d5a4a12;padding:24px;margin-bottom:18px}
+h1{color:#176d5d;font-size:22px;margin:0 0 5px}
+h2{color:#176d5d;font-size:17px}
+.muted{color:#76817e;font-size:12px}
+input,textarea{width:100%;padding:11px;border:1px solid #d9e3df;border-radius:9px;font-family:inherit;outline:none}
+textarea{min-height:120px;resize:vertical}
+label{display:block;font-size:12px;margin:12px 0 6px;color:#56645f}
+button{border:0;border-radius:9px;padding:10px 15px;font-family:inherit;cursor:pointer}
+.primary{background:#16836f;color:#fff}.secondary{background:#eef4f2;color:#176d5d}.danger{background:#fff0f0;color:#bd3333}
+.row{display:flex;gap:8px;align-items:center}.row>*{flex:1}
+.hidden{display:none}
+.item{border:1px solid #e2e9e6;border-radius:12px;padding:13px;margin:8px 0}
+.item strong{display:block;margin-bottom:5px}.item p{font-size:13px;line-height:1.8;color:#63706c;margin:0}
+.item small{color:#7b8582}
+.actions{display:flex;gap:6px;margin-top:9px}
+.status{padding:9px;border-radius:8px;background:#f2f7f5;color:#42645c;font-size:12px;margin-top:10px}
+.top{display:flex;justify-content:space-between;gap:15px;align-items:center}
+@media(max-width:650px){.top{display:block}.row{display:block}.row button{margin-top:8px;width:100%}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="card" id="loginCard">
+    <h1>لوحة إدارة المساعد الذكي</h1>
+    <div class="muted">ثانوية بحرة الأولى — هذه الصفحة مخصصة لحساب الإدارة المعتمد فقط.</div>
+    <label>البريد الإلكتروني</label>
+    <input id="email" type="email" autocomplete="username">
+    <label>كلمة المرور</label>
+    <input id="password" type="password" autocomplete="current-password">
+    <button class="primary" style="margin-top:12px;width:100%" onclick="login()">تسجيل الدخول</button>
+    <div id="loginMsg" class="status hidden"></div>
+  </div>
+
+  <div id="adminArea" class="hidden">
+    <div class="card top">
+      <div>
+        <h1>إدارة الأسئلة والأجوبة</h1>
+        <div class="muted">يمكنكِ وحدكِ إدارة المحتوى بعد تسجيل الدخول بحساب مصرح له.</div>
+      </div>
+      <button class="secondary" onclick="logout()">تسجيل الخروج</button>
+    </div>
+
+    <div class="card">
+      <h2 id="formTitle">إضافة سؤال جديد</h2>
+      <input type="hidden" id="editId">
+      <label>السؤال</label>
+      <input id="q" placeholder="مثال: كيف أتابع غياب ابنتي؟">
+      <label>الإجابة</label>
+      <textarea id="a" placeholder="اكتبي الإجابة المعتمدة من المدرسة..."></textarea>
+      <div class="row" style="margin-top:10px">
+        <button class="primary" onclick="saveQuestion()">حفظ</button>
+        <button class="secondary" onclick="clearForm()">إلغاء التعديل</button>
+      </div>
+      <div id="saveMsg" class="status hidden"></div>
+    </div>
+
+    <div class="card">
+      <div class="top"><h2>الأسئلة الحالية</h2><button class="secondary" onclick="loadQuestions()">تحديث</button></div>
+      <div id="items"></div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="../supabase-config.js"></script>
+<script>
+const {createClient}=window.supabase;
+const supabaseClient=createClient(SUPABASE_URL,SUPABASE_ANON_KEY);
+
+async function checkSession(){
+ const {data:{session}}=await supabaseClient.auth.getSession();
+ if(session){await verifyAdmin(session.user.id)}
+}
+async function verifyAdmin(uid){
+ const {data,error}=await supabaseClient.from("admins").select("user_id").eq("user_id",uid).maybeSingle();
+ if(error || !data){showLogin("هذا الحساب غير مصرح له بإدارة المحتوى.");return}
+ document.getElementById("loginCard").classList.add("hidden");
+ document.getElementById("adminArea").classList.remove("hidden");
+ loadQuestions();
+}
+async function login(){
+ const email=document.getElementById("email").value.trim();
+ const password=document.getElementById("password").value;
+ const {data,error}=await supabaseClient.auth.signInWithPassword({email,password});
+ if(error){showLogin(error.message);return}
+ await verifyAdmin(data.user.id);
+}
+async function logout(){await supabaseClient.auth.signOut();location.reload()}
+function showLogin(msg){const x=document.getElementById("loginMsg");x.textContent=msg;x.classList.remove("hidden")}
+async function loadQuestions(){
+ const {data,error}=await supabaseClient.from("questions").select("*").order("created_at",{ascending:true});
+ if(error){setSave(error.message);return}
+ const box=document.getElementById("items");box.innerHTML="";
+ (data||[]).forEach(x=>{
+   const d=document.createElement("div");d.className="item";
+   d.innerHTML="<strong>"+esc(x.question)+"</strong><p>"+esc(x.answer)+"</p><small>"+(x.is_active?"مفعّل":"مخفي")+"</small><div class='actions'>"+
+   "<button class='secondary' onclick='editQuestion("+x.id+")'>تعديل</button>"+
+   "<button class='secondary' onclick='toggleQuestion("+x.id+","+x.is_active+")'>"+(x.is_active?"إخفاء":"إظهار")+"</button>"+
+   "<button class='danger' onclick='deleteQuestion("+x.id+")'>حذف</button></div>";
+   box.appendChild(d);
+ });
+}
+async function saveQuestion(){
+ const q=document.getElementById("q").value.trim(),a=document.getElementById("a").value.trim(),id=document.getElementById("editId").value;
+ if(!q||!a){setSave("يرجى كتابة السؤال والإجابة.");return}
+ let result;
+ if(id) result=await supabaseClient.from("questions").update({question:q,answer:a}).eq("id",id);
+ else result=await supabaseClient.from("questions").insert({question:q,answer:a,is_active:true});
+ if(result.error){setSave(result.error.message);return}
+ setSave("تم الحفظ بنجاح.");clearForm();loadQuestions();
+}
+async function editQuestion(id){
+ const {data,error}=await supabaseClient.from("questions").select("*").eq("id",id).single();
+ if(error)return setSave(error.message);
+ document.getElementById("editId").value=id;
+ document.getElementById("q").value=data.question;
+ document.getElementById("a").value=data.answer;
+ document.getElementById("formTitle").textContent="تعديل السؤال";
+ window.scrollTo({top:0,behavior:"smooth"});
+}
+async function toggleQuestion(id,current){
+ const {error}=await supabaseClient.from("questions").update({is_active:!current}).eq("id",id);
+ if(error)setSave(error.message);else loadQuestions();
+}
+async function deleteQuestion(id){
+ if(!confirm("هل تريدين حذف هذا السؤال نهائيًا؟"))return;
+ const {error}=await supabaseClient.from("questions").delete().eq("id",id);
+ if(error)setSave(error.message);else loadQuestions();
+}
+function clearForm(){document.getElementById("editId").value="";document.getElementById("q").value="";document.getElementById("a").value="";document.getElementById("formTitle").textContent="إضافة سؤال جديد"}
+function setSave(msg){const x=document.getElementById("saveMsg");x.textContent=msg;x.classList.remove("hidden")}
+function esc(s){return s.replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[m]))}
+checkSession();
+</script>
+</body>
+</html>

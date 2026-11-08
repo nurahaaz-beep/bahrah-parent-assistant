@@ -41,6 +41,17 @@ button{border:0;border-radius:9px;padding:10px 15px;font-family:inherit;cursor:p
     <div id="loginMsg" class="status hidden"></div>
   </div>
 
+  <div class="card hidden" id="recoveryCard">
+    <h1>تعيين كلمة مرور جديدة</h1>
+    <div class="muted">أدخلي كلمة مرور جديدة لحساب الإدارة بعد فتح رابط الاستعادة المرسل إلى بريدك.</div>
+    <label for="newPassword">كلمة المرور الجديدة</label>
+    <input id="newPassword" type="password" autocomplete="new-password" minlength="8">
+    <label for="confirmPassword">تأكيد كلمة المرور الجديدة</label>
+    <input id="confirmPassword" type="password" autocomplete="new-password" minlength="8">
+    <button class="primary" style="margin-top:12px;width:100%" id="resetBtn" onclick="saveNewPassword()">حفظ كلمة المرور الجديدة</button>
+    <div id="recoveryMsg" class="status hidden" role="status"></div>
+  </div>
+
   <div id="adminArea" class="hidden">
     <div class="card top">
       <div>
@@ -77,9 +88,52 @@ button{border:0;border-radius:9px;padding:10px 15px;font-family:inherit;cursor:p
 const {createClient}=window.supabase;
 const supabaseClient=createClient(SUPABASE_URL,SUPABASE_ANON_KEY);
 
+let recoveryMode=false;
+function showRecovery(){
+ recoveryMode=true;
+ document.getElementById("loginCard").classList.add("hidden");
+ document.getElementById("adminArea").classList.add("hidden");
+ document.getElementById("recoveryCard").classList.remove("hidden");
+}
+function recoveryMessage(msg){
+ const x=document.getElementById("recoveryMsg");
+ x.textContent=msg;x.classList.remove("hidden");
+}
+// Supabase emits PASSWORD_RECOVERY after opening a valid recovery link.
+supabaseClient.auth.onAuthStateChange((event)=>{
+ if(event==="PASSWORD_RECOVERY")showRecovery();
+});
 async function checkSession(){
+ const params=new URLSearchParams(location.hash.slice(1));
+ const query=new URLSearchParams(location.search);
+ const isRecovery=params.get("type")==="recovery" || query.get("type")==="recovery";
+ if(isRecovery)showRecovery();
+ const {data:{session},error}=await supabaseClient.auth.getSession();
+ if(error && isRecovery){recoveryMessage("تعذر التحقق من رابط الاستعادة. افتحي أحدث رابط وصل إلى بريدك.");return}
+ if(isRecovery){
+   if(!session)recoveryMessage("رابط الاستعادة غير صالح أو انتهت صلاحيته. اطلبي رابطًا جديدًا من Supabase.");
+   return;
+ }
+ if(session && !recoveryMode)await verifyAdmin(session.user.id);
+}
+async function saveNewPassword(){
+ const password=document.getElementById("newPassword").value;
+ const confirm=document.getElementById("confirmPassword").value;
+ if(password.length<8){recoveryMessage("اختاري كلمة مرور لا تقل عن 8 أحرف.");return}
+ if(password!==confirm){recoveryMessage("كلمتا المرور غير متطابقتين.");return}
  const {data:{session}}=await supabaseClient.auth.getSession();
- if(session){await verifyAdmin(session.user.id)}
+ if(!session){recoveryMessage("انتهت صلاحية رابط الاستعادة. اطلبي رابطًا جديدًا.");return}
+ const btn=document.getElementById("resetBtn");btn.disabled=true;
+ const {error}=await supabaseClient.auth.updateUser({password});
+ btn.disabled=false;
+ if(error){recoveryMessage("تعذر حفظ كلمة المرور: "+error.message);return}
+ await supabaseClient.auth.signOut();
+ history.replaceState(null,"",location.pathname);
+ document.getElementById("newPassword").value="";
+ document.getElementById("confirmPassword").value="";
+ document.getElementById("recoveryCard").classList.add("hidden");
+ document.getElementById("loginCard").classList.remove("hidden");
+ showLogin("تم تغيير كلمة المرور بنجاح. سجّلي الدخول بالبريد الإلكتروني وكلمة المرور الجديدة.");
 }
 async function verifyAdmin(uid){
  const {data,error}=await supabaseClient.from("admins").select("user_id").eq("user_id",uid).maybeSingle();

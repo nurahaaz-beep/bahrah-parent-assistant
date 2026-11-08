@@ -1,0 +1,34 @@
+
+name: Supabase Keep Alive
+
+on:
+  schedule:
+    - cron: "0 8 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check-supabase:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check Supabase questions API
+        env:
+          SUPABASE_URL: https://okjqcfgcrlmgfhlyflgy.supabase.co
+          SUPABASE_KEY: ${{ secrets.SUPABASE_PUBLISHABLE_KEY }}
+        run: |
+          if [ -z "$SUPABASE_KEY" ]; then
+            echo "Missing Supabase publishable key"
+            exit 1
+          fi
+
+          curl --fail --show-error --silent \
+            --retry 2 \
+            --max-time 30 \
+            -H "apikey: $SUPABASE_KEY" \
+            "$SUPABASE_URL/rest/v1/questions?select=id&is_active=eq.true&limit=1" \
+            > /dev/null
+
+          echo "Supabase API responded successfully"
